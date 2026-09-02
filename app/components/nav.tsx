@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AuthButton from "./auth-button";
 
 export default function Nav() {
   return (
@@ -12,6 +13,7 @@ export default function Nav() {
         <Link href="/schedule">임장일정</Link>
         <Link href="/crew">임장크루</Link>
       </div>
+      <AuthButton />
     </nav>
   );
 }
