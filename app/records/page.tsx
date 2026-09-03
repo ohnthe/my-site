@@ -10,18 +10,30 @@ type Record = {
   note: string;
   visitor: string;
   visit_date: string;
+  sido_name: string | null;
+  sgg_name: string | null;
 };
+
+type Region = { sgg_code: string; sgg_name: string; sido_name: string };
+type Apartment = { id: number; complex_name: string };
+
+const SIDO_LIST = ["서울특별시", "경기도"];
 
 export default function Records() {
   const supabase = createClient();
   const [user, setUser] = useState<User | null>(null);
   const [records, setRecords] = useState<Record[]>([]);
+
+  const [sido, setSido] = useState("");
+  const [sggList, setSggList] = useState<Region[]>([]);
+  const [sgg, setSgg] = useState("");
+  const [aptList, setAptList] = useState<Apartment[]>([]);
   const [complex, setComplex] = useState("");
+
   const [note, setNote] = useState("");
   const [visitDate, setVisitDate] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // 로그인 상태 확인
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
     const { data: listener } = supabase.auth.onAuthStateChange(
@@ -30,7 +42,6 @@ export default function Records() {
     return () => listener.subscription.unsubscribe();
   }, [supabase]);
 
-  // 페이지 열릴 때 기록 불러오기
   const fetchRecords = async () => {
     const { data, error } = await supabase
       .from("records")
@@ -48,17 +59,57 @@ export default function Records() {
     fetchRecords();
   }, []);
 
-  // 폼 제출 시 새 기록 추가
+  useEffect(() => {
+    setSgg("");
+    setSggList([]);
+    setComplex("");
+    setAptList([]);
+    if (!sido) return;
+
+    supabase
+      .from("regions")
+      .select("sgg_code, sgg_name, sido_name")
+      .eq("sido_name", sido)
+      .order("sgg_name", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) console.error(error);
+        else setSggList((data as Region[]) || []);
+      });
+  }, [sido]);
+
+  useEffect(() => {
+    setComplex("");
+    setAptList([]);
+    if (!sgg) return;
+
+    supabase
+      .from("apartments")
+      .select("id, complex_name")
+      .eq("sgg_code", sgg)
+      .order("complex_name", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) console.error(error);
+        else setAptList((data as Apartment[]) || []);
+      });
+  }, [sgg]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !complex || !visitDate) return;
 
-    const visitorName =
-      user.user_metadata?.full_name || user.email || "익명";
+    const visitorName = user.user_metadata?.full_name || user.email || "익명";
+    const sggName = sggList.find((r) => r.sgg_code === sgg)?.sgg_name || null;
 
     setLoading(true);
     const { error } = await supabase.from("records").insert([
-      { complex, note, visitor: visitorName, visit_date: visitDate },
+      {
+        complex,
+        note,
+        visitor: visitorName,
+        visit_date: visitDate,
+        sido_name: sido || null,
+        sgg_name: sggName,
+      },
     ]);
     setLoading(false);
 
@@ -67,7 +118,7 @@ export default function Records() {
       return;
     }
 
-    setComplex("");
+    setSido("");
     setNote("");
     setVisitDate("");
     fetchRecords();
@@ -77,19 +128,52 @@ export default function Records() {
     <div className="min-h-screen bg-gray-50 px-8 py-12 max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">임장기록</h1>
 
-      {/* 새 기록 입력 폼: 로그인한 사용자만 표시 */}
       {user ? (
         <form
           onSubmit={handleSubmit}
           className="bg-white rounded-lg shadow p-5 mb-8 grid grid-cols-1 md:grid-cols-2 gap-4"
         >
-          <input
-            type="text"
-            placeholder="단지명 (예: 래미안 대치팰리스)"
+          <select
+            value={sido}
+            onChange={(e) => setSido(e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm"
+          >
+            <option value="">시/도 선택</option>
+            {SIDO_LIST.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={sgg}
+            onChange={(e) => setSgg(e.target.value)}
+            disabled={!sido}
+            className="border rounded-lg px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400"
+          >
+            <option value="">시/군/구 선택</option>
+            {sggList.map((r) => (
+              <option key={r.sgg_code} value={r.sgg_code}>
+                {r.sgg_name}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={complex}
             onChange={(e) => setComplex(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm"
-          />
+            disabled={!sgg}
+            className="border rounded-lg px-3 py-2 text-sm md:col-span-2 disabled:bg-gray-50 disabled:text-gray-400"
+          >
+            <option value="">아파트 단지 선택</option>
+            {aptList.map((a) => (
+              <option key={a.id} value={a.complex_name}>
+                {a.complex_name}
+              </option>
+            ))}
+          </select>
+
           <input
             type="date"
             value={visitDate}
@@ -101,7 +185,7 @@ export default function Records() {
             placeholder="메모 (교통, 채광, 관리비 등)"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm md:col-span-2"
+            className="border rounded-lg px-3 py-2 text-sm"
           />
           <button
             type="submit"
@@ -117,7 +201,6 @@ export default function Records() {
         </div>
       )}
 
-      {/* 기록 목록 */}
       <div className="space-y-4">
         {records.length === 0 && (
           <p className="text-gray-400 text-sm">아직 등록된 기록이 없어요.</p>
@@ -129,6 +212,11 @@ export default function Records() {
           >
             <div>
               <h3 className="font-semibold text-lg mb-1">{r.complex}</h3>
+              {(r.sido_name || r.sgg_name) && (
+                <p className="text-xs text-gray-400 mb-1">
+                  {r.sido_name} {r.sgg_name}
+                </p>
+              )}
               <p className="text-gray-600 text-sm">{r.note}</p>
             </div>
             <div className="text-right text-sm text-gray-400 whitespace-nowrap ml-4">
